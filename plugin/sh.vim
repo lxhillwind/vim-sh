@@ -48,9 +48,13 @@ for s:i in ['VIMSERVER_ID', 'VIMSERVER_BIN', 'VIMSERVER_CLIENT_PID']
   endif
 endfor
 
-function! s:echo(str) abort
-  redraws | echon trim(a:str, "\n")
-  return 0
+function! s:echo(str, echo) abort
+  if a:echo
+    redraws | echon trim(a:str, "\n")
+    return 0
+  else
+    return a:str
+  endif
 endfunction
 
 function! s:nvim_exit_cb(...) dict
@@ -112,6 +116,9 @@ function! s:sh(cmd, opt) abort
 
   let opt = extend(opt, a:opt)
 
+  " used in win32 FilterV
+  let opt.echo = get(opt, 'echo', 1)
+
   if opt.background
     let opt.tty = 1
   endif
@@ -171,10 +178,10 @@ function! s:sh(cmd, opt) abort
     endif
 
     if stdin is# 0
-      return s:echo(system(cmd))
+      return s:echo(system(cmd), opt.echo)
     else
       " add final [''] to add final newline
-      return s:echo(system(cmd, stdin + ['']))
+      return s:echo(system(cmd, stdin + ['']), opt.echo)
     endif
   endif
 
@@ -276,21 +283,25 @@ function! s:sh(cmd, opt) abort
     if opt.background
       wincmd p
     endif
-  else
-    " TODO handle non-tty stderr
-    let job_opt = extend(job_opt, {'out_io': 'buffer', 'out_msg': 0})
-    let job = job_start(cmd, job_opt)
-  endif
-  if opt.tty
+
     return job
   endif
+
+  " no tty
+  let bufnr = bufadd('')
+  call bufload(bufnr)
+  let job_opt = extend(job_opt, {
+        \'out_io': 'buffer', 'out_msg': 0, 'out_buf': bufnr,
+        \'err_io': 'buffer', 'err_msg': 0, 'err_buf': bufnr,
+        \})
+  let job = job_start(cmd, job_opt)
 
   while job_status(job) ==# 'run'
     sleep 1m
   endwhile
-  return s:echo(
-        \join(getbufline(ch_getbufnr(job, 'out'), 1, '$'), "\n")
-        \)
+  let result = join(getbufline(bufnr, 1, '$'), "\n")
+  execute bufnr . 'bwipeout!'
+  return s:echo(result, opt.echo)
 endfunction
 
 if s:is_nvim
@@ -315,10 +326,12 @@ command! -nargs=+ -range FilterV call <SID>filterV(<q-args>, <range>, <line1>, <
 
 let s:busybox_cmdlist = expand('<sfile>:p:h:h') . '/asset/busybox-cmdlist.txt'
 function! s:win32_cmd_list(A, L, P)
-  if !get(s:, 'win32_cmd_list_data', 0)
-    let s:win32_cmd_list_data = join(readfile(s:busybox_cmdlist), "\n")
+  if empty(get(s:, 'win32_cmd_list_data', 0))
+    let s:win32_cmd_list_data = readfile(s:busybox_cmdlist)
   endif
-  return s:win32_cmd_list_data
+  let exe = globpath(substitute($PATH, ';', ',', 'g'), '*.exe', 0, 1)
+  call map(exe, 'substitute(v:val, ".*\\", "", "")')
+  return join(sort(extend(exe, s:win32_cmd_list_data)), "\n")
 endfunction
 
 let s:shell_opt_cmd = {
@@ -334,7 +347,7 @@ let s:shell_opt_sh = {
       \ }
 
 " win32 vim from unix shell will set &shell incorrectly, so restore it
-if match(&shell, '\v(pw)@<!sh(|.exe)$') >= 0
+if s:is_win32 && match(&shell, '\v(pw)@<!sh(|.exe)$') >= 0
   let &shell = s:shell_opt_cmd.shell
   let &shellcmdflag = s:shell_opt_cmd.shellcmdflag
   let &shellquote = s:shell_opt_cmd.shellquote
@@ -370,9 +383,15 @@ function! s:shell_replace()
 
   if match(cmd, '\v^!') >= 0
     let cmd = 'Sh ' . cmd[1:]
+  elseif match(cmd, '\v^(r|re|rea|read) !') >= 0
+    let idx = matchend(cmd, '\v^(r|re|rea|read) !')
+    let cmd = printf('put =execute(\"%s\")',
+          \ escape(
+          \   escape('Sh ' . cmd[idx:], '"\'),
+          \ '|"'))
   else
-    " /{pattern}[/] and ?{pattern}[?] are not matched since they are too
-    " complex.
+    " /{pattern}[/] and ?{pattern}[?] are not always matched since they may be
+    " too complex.
     let range_str = '('
           \ . '('
           "\ number
@@ -383,6 +402,8 @@ function! s:shell_replace()
           \ . "|'[a-zA-Z<>]"
           "\ \/ \? \&
           \ . '|\\\/|\\\?|\\\&'
+          "\ /{pattern}/ / ?{pattern}?, simple case
+          \ . '|/.{-}[^\\]/|\?.{-}[^\\]\?'
           "\ empty (as .)
           \ . '|'
           \ . ')'
@@ -404,7 +425,7 @@ endfunction
 function! s:filterV(cmd, range, line1, line2)
   let previous = @"
   try
-    let @" = trim(s:sh(a:cmd, {'range': a:range, 'line1': a:line1, 'line2': a:line2}), "\n")
+    let @" = trim(s:sh(a:cmd, {'range': a:range, 'line1': a:line1, 'line2': a:line2, 'echo': 0}), "\n")
     let first = 1 == a:line1
     let last = line('$') == a:line2
     execute 'normal' a:line1 . 'gg'

@@ -7,44 +7,33 @@ Two commands are provided:
 
 - `:Terminal [cmd]...`; (like `:Sh`, but always open tty in current window)
 
-## Option
-Pass option as follows:
+## Usage
+```console
+Usage: [range]Sh [-flags] [cmd...]
 
-- show output in new buffer (tty) instead of ex command output area; without
-  this option, shell command will be executed without pty, and in block mode.
-  (like `system()`)
+Example:
+  Sh uname -o
 
-```vim
-:Sh -t [cmd]...
+Supported flags:
+  h: display this help
+  v: visual mode (char level)
+  t: use builtin terminal
+  w: use external terminal
+  c: close terminal after execution
+  b: focus on current buffer (implies -t flag)
+  f: filter, like ":{range}!cmd"
+  r: like ":[range]read !cmd"
 ```
 
-- selected text as stdin (this is different from filter, which is line level);
-  visual mode
+details:
 
-```vim
-:<','>Sh -v [cmd]...
-```
+- `-v`: selected text as stdin (this is different from filter, which is line
+  level); visual mode
 
-- execute shell command in new application window. On Windows, it is cmd.exe;
-  on other OS, urxvt / alacritty is supported now.
+- `-w`: execute shell command in new application window. On Windows, it is
+  mintty.exe or cmd.exe; on other OS, urxvt / alacritty is supported now.
 
-```vim
-:Sh -w [cmd]...
-```
-
-- close window after execution
-
-```vim
-:Sh -c [cmd]...
-```
-
-- do not lose focus on current buffer, run in background (implies -t option)
-
-```vim
-:Sh -b [cmd]...
-```
-
-- try to reuse existing builtin tty window (implies -t option)
+- `<bang>`: try to reuse existing builtin tty window (implies -t option)
 
 ```vim
 :Sh! [cmd]...
@@ -58,7 +47,58 @@ Sh -wv [cmd]...
 
 NOTE: `:Sh -w -v [cmd]...` will not work!
 
+## Config
+
+### `g:sh_path`
+
+set variable `g:sh_path` to override default shell:
+
+- win32 default shell: busybox
+- unix-like default shell: `&shell`
+
+*If g:sh_path contains `busybox`, then sh is appended, like `busybox sh`.*
+
+### `g:sh_programs`
+
+set variable `g:sh_programs` to override default `-w` program detection order:
+
+default: `['alacritty', 'urxvt', 'mintty', 'cmd',]`
+
+### `g:sh_win32_cr`
+
+win32 only (`has('win32') == 1`);
+
+remap `<CR>` in command line mode; then `:[range]!{cmd}` / `:read !{cmd}` will
+be rewritten as `Sh`.
+
+example: `:!ls -l` will be translated to `:Sh ls -l`.
+
+default: `0`; set to `1` to enable it.
+
+#### experimental
+
+element of `g:sh_programs` can be function, like this:
+
+```vim
+" use !empty() to turn job object into number
+let g:sh_programs = [{x -> !empty(job_start(['alacritty', '-e'] + x.cmd))}]
+```
+
+If the function returns 0, then try the next element.
+
 ## Feature
+
+### support vim (7.3+) / neovim
+
+- uniform experience in all mainstream vim distribution.
+
+NOTE: before `patch-8.0.1089`, there is no way to differ 'no range' / 'current
+line'. Since the former is used more frequently, this plugin will always
+prefer it.
+
+example: `:.Sh wc -l` is the same as `:Sh wc -l`;
+
+to use current line as stdin, try this: `<Shift-v>:Sh -v {cmd}`.
 
 ### always use shell
 
@@ -69,16 +109,33 @@ NOTE: `:Sh -w -v [cmd]...` will not work!
 
 - `%` with optional modifiers (`:p` / `:h` / `:t` / `:r` / `:e`) is expanded
   only when passed as a standalone argument; and it is shell-escaped (like
-  `:S` modifier is always used).
+  `:S` modifier is always used; use unix shellescape rule even on win32).
+
+- to make it compatible with `:!` command, `:S` modifier can be passed, and it
+  will be trimmed (use custom `shellescape` instead).
 
 This means that command like `Sh printf %s %:t:e` will print file basename
 (`%s` is not expanded; `%:t:e` should NOT be quoted, as it is escaped
 automatically).
 
+`Sh printf %s %:t:e:S` also works.
+
 ### unix shell support in native Windows vim (`has('win32') == 1`)
 
-This requires [busybox-w32](https://frippery.org/busybox/) binary in `$PATH`.
+By default, this requires [busybox-w32](https://frippery.org/busybox/) binary
+in `$PATH`.
 
-- `:terminal ++shell` with busybox shell syntax.
+You can also use other shell by setting variable `g:sh_path`. (take
+effect at runtime)
 
-- Replace `:!` and `!` (filter) with busybox sh (by `cmap <CR>`).
+```vim
+" msys2 shell default path (x64)
+let g:sh_path = 'C:/msys64/usr/bin/bash.exe'
+
+" 32-bit git for windows (x64 system)
+let g:sh_path = 'C:/Program Files (x86)/Git/usr/bin/bash'
+```
+
+- `:terminal ++shell` with unix shell syntax.
+
+- Replace `:!` and `!` (filter) with unix shell (see `g:sh_win32_cr` above).

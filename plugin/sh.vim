@@ -3,6 +3,8 @@ if get(g:, 'loaded_sh') || v:version < 703
 endif
 let g:loaded_sh = 1
 
+let s:sh_programs = ['alacritty', 'urxvt', 'mintty', 'cmd', 'tmux', 'tmuxc', 'tmuxs', 'tmuxv']
+
 " main {{{1
 " common var def {{{2
 let s:is_unix = has('unix')
@@ -61,19 +63,6 @@ else
   endif
 endif
 
-" vimserver tweak {{{2
-" store vimserver.vim related environment variable, and delete them from env;
-" so that ":!" / "system()" / "job_start()" will not be affected by vimserver.
-let s:vimserver_envs = get(s:, 'vimserver_envs', {})
-for s:i in ['VIMSERVER_ID', 'VIMSERVER_BIN', 'VIMSERVER_CLIENT_PID']
-  if exists('$'.s:i)
-    if exists('*getenv')
-      let s:vimserver_envs[s:i] = getenv(s:i)
-    endif
-    execute 'unlet' '$'.s:i
-  endif
-endfor
-
 " polyfill {{{2
 function! s:trim(s, p) abort
   if exists('*trim')
@@ -128,7 +117,34 @@ endfunction
 function! s:sh(cmd, opt) abort " {{{2
   " opt parse {{{
   let opt = {'bang': 0, 'newwin': 1}
-  let opt_string = matchstr(a:cmd, '\v^\s*-[a-zA-Z]*')
+
+  let opt_string = matchstr(a:cmd, '\v^\s*-[a-zA-Z_,=0-9:-]*')
+  let cmd = a:cmd[len(opt_string):]
+  let opt_string = substitute(opt_string, '\v^\s{-}-', '', '')
+
+  " TODO doc about opt: title
+  let opt_dict = {}
+  if match(opt_string, '\v[,=]') >= 0
+    let tmp = split(opt_string, '\v,+')
+    let opt_string = ''
+    for i in tmp
+      if match(i, '=') < 0
+        let opt_string = opt_string . i
+      else
+        try
+          let [k, v] = split(i, '\v^[^=]+\zs\=\ze')
+        catch /E688/
+          " empty opt will raise, just ignore it.
+          continue
+        endtry
+        if len(k) == 1
+          " only add short option.
+          let opt_string = opt_string . k
+        endif
+        let opt_dict[k] = add(get(opt_dict, k, []), v)
+      endif
+    endfor
+  endif
   let help = ['Usage: [range]Sh [-flags] [cmd...]']
   call extend(help, ['', 'Example:', '  Sh uname -o'])
   call extend(help, ['', 'Supported flags:'])
@@ -139,16 +155,18 @@ function! s:sh(cmd, opt) abort " {{{2
   call add(help, '  v: visual mode (char level)')
   let opt.visual = match(opt_string, 'v') >= 0
 
-  call add(help, '  t: use builtin terminal')
+  call add(help, '  t: use builtin terminal (support sub opt, like this: -t=7split)')
+  call add(help, '     sub opt is used as action to prepare terminal buffer')
   let opt.tty = match(opt_string, 't') >= 0
 
-  call add(help, '  w: use external terminal')
+  call add(help, '  w: use external terminal (support sub opt, like this: -w=urxvt,w=cmd)')
+  call add(help, '     currently supported: ' . join(s:sh_programs, ', '))
   let opt.window = match(opt_string, 'w') >= 0
 
   call add(help, '  c: close terminal after execution')
   let opt.close = match(opt_string, 'c') >= 0
 
-  call add(help, '  b: focus on current buffer (implies -t flag)')
+  call add(help, '  b: focus on current buffer / window')
   let opt.background = match(opt_string, 'b') >= 0
 
   call add(help, '  f: filter, like ":{range}!cmd"')
@@ -157,11 +175,27 @@ function! s:sh(cmd, opt) abort " {{{2
   call add(help, '  r: like ":[range]read !cmd"')
   let opt.read_cmd = match(opt_string, 'r') >= 0
 
-  let opt = extend(opt, a:opt)
-
-  if opt.background
-    let opt.tty = 1
+  call add(help, '  n: dry run (echo options passed to job_start / jobstart)')
+  let opt.dryrun = match(opt_string, 'n') >= 0
+  if opt.dryrun && !exists('*json_encode')
+    throw '-n flag is not supported: function json_encode is missing!'
   endif
+
+  if (opt.tty || opt.window)
+    if opt.filter || opt.read_cmd || opt.dryrun
+      throw '-t / -w flag is conflict with -f / -r / -n!'
+    endif
+  endif
+
+  if !!opt.tty + !!opt.window >= 2
+    throw '-t / -w flag cannot be used together!'
+  endif
+
+  if !!opt.filter + !!opt.read_cmd + !!opt.dryrun >= 2
+    throw '-f / -r / -n flag cannot be used together!'
+  endif
+
+  let opt = extend(opt, a:opt)
 
   if opt.bang
     let opt.tty = 1
@@ -209,8 +243,7 @@ function! s:sh(cmd, opt) abort " {{{2
   endif
   " }}}
 
-  let cmd = a:cmd[len(opt_string):]
-  let l:term_name = cmd
+  let l:term_name = has_key(opt_dict, 'title') ? opt_dict.title[-1] : cmd
   " expand %
   let cmd = substitute(cmd, '\v%(^|\s)\zs(\%(\:[phtreS])*)\ze%($|\s)',
         \ s:is_win32 ?
@@ -238,12 +271,12 @@ function! s:sh(cmd, opt) abort " {{{2
   " using system() in vim with stdin will cause writing temp file.
   " on win32, system() will open a new cmd window.
   " so do not use system() if possible.
-  if !opt.tty && !opt.window && !s:use_job
+  if !opt.tty && !opt.window && !s:use_job && !opt.dryrun " {{{
     if s:is_win32
       " use new variable is required for old version vim (like 7.2.051),
       " since it has strong type checking for variable redeclare.
       " see tag 7.4.1546
-      let cmd_new = [shell] + shell_arg_patch + ['-c', cmd]
+      let cmd_new = s:win32_sh_replace(shell, shell_arg_patch, ['sh', '-c', cmd])
       if s:is_nvim
         let cmd = cmd_new
       else
@@ -264,6 +297,7 @@ function! s:sh(cmd, opt) abort " {{{2
             \ ), opt)
     endif
   endif
+  " }}}
 
   " opt.visual: yank text by `norm gv`;
   " opt.window: communicate stdin by file;
@@ -288,22 +322,29 @@ function! s:sh(cmd, opt) abort " {{{2
     call writefile(stdin, tmpfile, 'b')
   endif
 
-  let keep_window_path = fnamemodify(s:file, ':p:h:h') . '/bin/keep-window.sh'
-
-  if empty(cmd)
-    let l:term_name = shell
-    let cmd_new = [shell] + shell_arg_patch
+  let interactive_shell = empty(cmd)
+  if interactive_shell
+    if empty(l:term_name)
+      " it may be set by title opt already.
+      let l:term_name = shell
+    endif
+    if s:is_win32
+      " replace it later.
+      let cmd_new = ['sh']
+    else
+      let cmd_new = [shell]
+    endif
   else
     if !empty(tmpfile)
       if s:is_unix
-        let cmd_new = [shell] + shell_arg_patch + ['-c', printf('sh -c %s < %s',
+        let cmd_new = ['sh', '-c', printf('sh -c %s < %s',
               \ shellescape(cmd), shellescape(tmpfile))]
       else
-        let cmd_new = [shell] + shell_arg_patch + ['-c', printf('sh -c %s < %s',
+        let cmd_new = ['sh', '-c', printf('sh -c %s < %s',
               \ s:shellescape(cmd), s:shellescape(s:tr_slash(tmpfile)))]
       endif
     else
-      let cmd_new = [shell] + shell_arg_patch + ['-c', cmd]
+      let cmd_new = ['sh', '-c', cmd]
     endif
   endif
   unlet cmd
@@ -312,15 +353,25 @@ function! s:sh(cmd, opt) abort " {{{2
   " }}}
 
   if opt.window " {{{
-    let context = {'shell': shell, 'shell_arg_patch': shell_arg_patch,
-          \ 'cmd': cmd, 'close': opt.close,
+    let cmd = opt.close ? cmd : s:cmdlist_keep_window(cmd)
+    if s:is_win32
+      let cmd = s:win32_sh_replace(shell, shell_arg_patch, cmd)
+    endif
+    let context = {'shell': shell,
+          \ 'cmd': cmd,
+          \ 'close': opt.close, 'background': opt.background,
           \ 'start_fn': s:is_win32 ? function('s:win32_start') : function('s:unix_start'),
-          \ 'term_name': l:term_name,
-          \ 'keep_window_path': keep_window_path}
+          \ 'term_name': l:term_name}
 
-    for s:program in (exists('g:sh_programs') ? g:sh_programs :
-          \ ['alacritty', 'urxvt', 'mintty', 'cmd',]
-          \ )
+    let program_set = []
+    if has_key(opt_dict, 'w')
+      let program_set = opt_dict.w
+    elseif exists('g:sh_programs')
+      let program_set = g:sh_programs
+    else
+      let program_set = s:sh_programs
+    endif
+    for s:program in program_set
       if type(s:program) == type(function('tr'))
         :
       elseif type(s:program) == type('')
@@ -340,6 +391,10 @@ function! s:sh(cmd, opt) abort " {{{2
     return
   endif
   " }}}
+
+  if s:is_win32
+    let cmd = s:win32_sh_replace(shell, shell_arg_patch, cmd)
+  endif
 
   if s:is_win32 && !s:is_nvim
     let cmd_new = s:win32_cmd_list_to_str(cmd)
@@ -361,15 +416,20 @@ function! s:sh(cmd, opt) abort " {{{2
         endif
       endfor
     endif
-    if opt.newwin && buf_idx < 0
-      execute 'bel' &cmdwinheight . 'split'
+    if buf_idx < 0
+      if has_key(opt_dict, 't')
+        execute opt_dict.t[-1]
+      elseif opt.newwin
+        execute 'bel' &cmdwinheight . 'split'
+      endif
     endif
 
     let job_opt = extend(job_opt, {'curwin': 1, 'term_name': l:term_name})
     if opt.close
       let job_opt = extend(job_opt, {'term_finish': 'close'})
     endif
-    let job_opt = extend(job_opt, {'env': s:vimserver_envs})
+    " use g:vimserver_env (set in vim-vimserver)
+    let job_opt = extend(job_opt, {'env': exists('g:vimserver_env') ? g:vimserver_env : {}})
     if s:is_nvim
       enew
       let job_opt = extend(job_opt,
@@ -394,6 +454,11 @@ function! s:sh(cmd, opt) abort " {{{2
   endif
   " }}}
 
+  if opt.dryrun
+    echo json_encode(#{cmd: cmd, opt: job_opt})
+    return
+  endif
+
   " no tty {{{
   let bufnr = bufadd('')
   call bufload(bufnr)
@@ -401,6 +466,7 @@ function! s:sh(cmd, opt) abort " {{{2
         \'out_io': 'buffer', 'out_msg': 0, 'out_buf': bufnr,
         \'err_io': 'buffer', 'err_msg': 0, 'err_buf': bufnr,
         \})
+
   let job = job_start(cmd, job_opt)
 
   try
@@ -454,8 +520,7 @@ function! s:unix_start(cmdlist, ...) abort
   if s:has_job
     call function(s:job_start)(a:cmdlist)
   else
-    let bg_helper_path = fnamemodify(s:file, ':p:h:h') . '/bin/background.sh'
-    let cmdlist = [bg_helper_path] + a:cmdlist
+    let cmdlist = ['sh', '-c', '"$@" >/dev/null 2>&1 &', ''] + a:cmdlist
     call system(join(map(cmdlist, 'shellescape(v:val)'), ' '))
   endif
 endfunction
@@ -476,38 +541,71 @@ function! s:post_func(result, opt) abort
   endif
 endfunction
 
+function! s:cmdlist_keep_window(cmd) abort
+  " NOTE `sh` here may be replaced by correct sh path later (for win32).
+  return ['sh', '-c',
+        \ '"$@"; if command -v stty >/dev/null; then stty sane; fi; '
+        \ . 'echo; echo "Press any key to continue..."; '
+        \ . 'if command -v zstyle >/dev/null; then read -q; else read -n 1; fi',
+        \ ''] + a:cmd
+endfunction
+
 " -w program {{{2
 function! s:program_alacritty(context) abort
-  let [cmd, close, keep_window_path] = [a:context.cmd, a:context.close, a:context.keep_window_path]
+  let cmd = a:context.cmd
   if executable('alacritty')
-    let cmd = close ? cmd : [keep_window_path] + cmd
-    call a:context.start_fn(['alacritty', '-e'] + cmd)
+    call a:context.start_fn(['alacritty', '-t', a:context.term_name, '-e'] + cmd)
     return 1
   endif
 endfunction
 
 function! s:program_urxvt(context) abort
-  let [cmd, close, keep_window_path] = [a:context.cmd, a:context.close, a:context.keep_window_path]
+  let cmd = a:context.cmd
   if executable('urxvt')
-    let cmd = close ? cmd : [keep_window_path] + cmd
-    call a:context.start_fn(['urxvt', '-e'] + cmd)
+    call a:context.start_fn(['urxvt', '-title', a:context.term_name, '-e'] + cmd)
     return 1
   endif
+endfunction
+
+function! s:program_tmux_main(context) abort dict
+  if empty($TMUX) || !executable('tmux')
+    return 0
+  endif
+  let cmd = a:context.cmd
+  let background = a:context.background
+  let opt = get(self, 'opt', ['neww'])
+  if background
+    let opt = add(opt, '-d')
+  endif
+  call a:context.start_fn(['tmux'] + opt + cmd)
+  return 1
+endfunction
+
+function! s:program_tmux(context) abort
+  return {'opt': ['neww'], 'fn': function('s:program_tmux_main')}.fn(a:context)
+endfunction
+
+function! s:program_tmuxc(context) abort
+  return {'opt': ['neww'], 'fn': function('s:program_tmux_main')}.fn(a:context)
+endfunction
+
+function! s:program_tmuxs(context) abort
+  return {'opt': ['splitw', '-v'], 'fn': function('s:program_tmux_main')}.fn(a:context)
+endfunction
+
+function! s:program_tmuxv(context) abort
+  return {'opt': ['splitw', '-h'], 'fn': function('s:program_tmux_main')}.fn(a:context)
 endfunction
 
 function! s:program_cmd(context) abort
   if s:is_unix | return 0 | endif
 
-  let [shell, shell_arg_patch, cmd, close, keep_window_path] = [a:context.shell, a:context.shell_arg_patch, a:context.cmd, a:context.close, a:context.keep_window_path]
-  if !close
-    let cmd = [shell] + shell_arg_patch + [keep_window_path] + cmd
-  endif
-  call a:context.start_fn(cmd, {'term_name': a:context.term_name})
+  call a:context.start_fn(a:context.cmd, {'term_name': a:context.term_name})
   return 1
 endfunction
 
 function! s:program_mintty(context) abort
-  let [shell, cmd, close, keep_window_path] = [a:context.shell, a:context.cmd, a:context.close, a:context.keep_window_path]
+  let [shell, cmd] = [a:context.shell, a:context.cmd]
   " prefer mintty in the same dir of shell.
   let mintty_path = substitute(shell, '\v([\/]|^)\zs(zsh|bash)\ze(\.exe|"?$)', 'mintty', '')
   if mintty_path ==# shell || !executable(mintty_path)
@@ -515,7 +613,7 @@ function! s:program_mintty(context) abort
   endif
 
   if executable(mintty_path)
-    let cmd = [mintty_path] + (close ? [] : [keep_window_path]) + cmd
+    let cmd = [mintty_path, '-t', a:context.term_name] + cmd
     call a:context.start_fn(cmd)
     return 1
   endif
@@ -575,6 +673,10 @@ endfunction
 " win32 polyfill {{{1
 if !s:is_win32 | finish | endif
 
+function! s:win32_sh_replace(shell, args, cmd) abort
+  return [a:shell] + a:args + a:cmd[1 : ]
+endfunction
+
 " win32 quote related {{{2
 function! s:shellescape(cmd) abort
   return "'" . substitute(a:cmd, "'", "'\"'\"'", 'g') . "'"
@@ -621,16 +723,17 @@ function! s:win32_cmd_exe_quote(arg)
 endfunction
 
 " win32 completion {{{2
-let s:busybox_cmdlist = expand('<sfile>:p:h:h') . '/asset/busybox-cmdlist.txt'
 function! s:win32_cmd_list(A, L, P)
-  " use busybox cmd list even when the shell is not busybox,
+  " use busybox cmd list even when the shell is not busybox, {{{
   " since $PATH may not contain /usr/bin before invoking shell.
-  if empty(get(s:, 'win32_cmd_list_data', 0))
-    let s:win32_cmd_list_data = readfile(s:busybox_cmdlist)
-  endif
+  "
+  " generate data with:
+  "   busybox | sed -n '/^Cur/,$ p' | tail +2 | tr -d '\n'
+  let data = '[, [[, acpid, addgroup, adduser, adjtimex, ar, arch, arp, arping, ash,	awk, base32, base64, basename, bbconfig, bc, beep, blkdiscard, blkid,	blockdev, bootchartd, brctl, bunzip2, busybox, bzcat, bzip2, cal, cat,	chat, chattr, chgrp, chmod, chown, chpasswd, chpst, chroot, chrt, chvt,	cksum, clear, cmp, comm, cp, cpio, crond, crontab, cryptpw, cttyhack,	cut, date, dc, dd, deallocvt, delgroup, deluser, depmod, df, dhcprelay,	diff, dirname, dmesg, dnsd, dnsdomainname, dos2unix, du, dumpkmap,	dumpleases, echo, ed, egrep, eject, env, envdir, envuidgid, ether-wake,	expand, expr, factor, fakeidentd, fallocate, false, fatattr, fbset,	fbsplash, fdflush, fdformat, fdisk, fgconsole, fgrep, find, findfs,	flock, fold, free, freeramdisk, fsck, fsck.minix, fsfreeze, fstrim,	fsync, ftpd, ftpget, ftpput, fuser, getopt, getty, grep, groups,	gunzip, gzip, halt, hd, hdparm, head, hexdump, hexedit, hostid,	hostname, httpd, hwclock, i2cdetect, i2cdump, i2cget, i2cset,	i2ctransfer, id, ifconfig, ifdown, ifenslave, ifplugd, ifup, inetd,	init, inotifyd, insmod, install, ionice, iostat, ip, ipaddr, ipcalc,	ipcrm, ipcs, iplink, ipneigh, iproute, iprule, iptunnel, kbd_mode,	kill, killall, killall5, klogd, less, link, linux32, linux64, linuxrc,	ln, loadfont, loadkmap, logger, login, logname, logread, losetup, lpd,	lpq, lpr, ls, lsattr, lsmod, lsof, lspci, lsscsi, lsusb, lzcat, lzma,	lzopcat, makedevs, makemime, man, md5sum, mdev, mesg, microcom, mkdir,	mkdosfs, mke2fs, mkfifo, mkfs.ext2, mkfs.minix, mkfs.vfat, mknod,	mkpasswd, mkswap, mktemp, modinfo, modprobe, more, mount, mountpoint,	mpstat, mt, mv, nameif, nbd-client, nc, netstat, nice, nl, nmeter,	nohup, nproc, nsenter, nslookup, ntpd, od, openvt, partprobe, passwd,	paste, patch, pgrep, pidof, ping, ping6, pipe_progress, pivot_root,	pkill, pmap, popmaildir, poweroff, powertop, printenv, printf, ps,	pscan, pstree, pwd, pwdx, raidautorun, rdate, rdev, readahead,	readlink, readprofile, realpath, reboot, reformime, renice, reset,	resize, resume, rev, rfkill, rm, rmdir, rmmod, route, rpm2cpio,	rtcwake, run-init, run-parts, runsv, runsvdir, rx, script,	scriptreplay, sed, sendmail, seq, setarch, setconsole, setfattr,	setfont, setkeycodes, setlogcons, setpriv, setserial, setsid,	setuidgid, sh, sha1sum, sha256sum, sha3sum, sha512sum, showkey, shred,	shuf, slattach, sleep, smemcap, softlimit, sort, split, ssl_client,	start-stop-daemon, stat, strings, stty, su, sulogin, sum, sv, svc,	svlogd, svok, swapoff, swapon, switch_root, sync, sysctl, syslogd, tac,	tail, tar, taskset, tc, tcpsvd, tee, telnet, telnetd, test, tftp,	tftpd, time, timeout, top, touch, tr, traceroute, traceroute6, true,	truncate, ts, tty, ttysize, tunctl, tune2fs, ubiattach, ubidetach,	ubimkvol, ubirename, ubirmvol, ubirsvol, ubiupdatevol, udhcpc, udhcpc6,	udhcpd, udpsvd, uevent, umount, uname, uncompress, unexpand, uniq,	unix2dos, unlink, unlzma, unlzop, unshare, unxz, unzip, uptime, usleep,	uudecode, uuencode, vconfig, vi, vlock, volname, watch, watchdog, wc,	wget, which, whoami, whois, xargs, xxd, xz, xzcat, yes, zcat, zcip'
+  " }}}
   let exe = s:globpath(substitute($PATH, ';', ',', 'g'), '*.exe', 0, 1)
   call map(exe, 'substitute(v:val, ".*\\", "", "")')
-  return join(sort(extend(exe, s:win32_cmd_list_data)), "\n")
+  return join(sort(extend(exe, split(data, ',\s*'))), "\n")
 endfunction
 
 function! s:globpath(a, b, c, d) abort

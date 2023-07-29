@@ -1,33 +1,34 @@
 # vim-sh
 
-Since commit [5b829c9799c458ef4956009a747925b141b3a373](https://github.com/lxhillwind/vim-sh/tree/5b829c9799c458ef4956009a747925b141b3a373),
-only vim with `has('vim9script')` will be supported.
-
 ## Usage
-Two commands are provided:
-
-- `:Sh [cmd]...`;
-
-- `:Terminal [cmd]...`; (like `:Sh`, but always open tty in current window)
 
 ```console
-Usage: [range]Sh [-flags] [cmd...]
+Usage: [range]Sh[!] [-flags] [cmd...]
 
 Example:
   Sh uname -o
 
+Flags parsing rule:
+  "," delimited; if item contains "=", it is used as sub opt; else it is combination of flags
+
 Supported flags:
   h: display this help
+  !: (:Sh! ...); try to reuse terminal window (implies -t)
   v: visual mode (char level)
   t: use builtin terminal (support sub opt, like this: -t=7split)
      sub opt is used as action to prepare terminal buffer
   w: use external terminal (support sub opt, like this: -w=urxvt,w=cmd)
-     currently supported: alacritty, urxvt, mintty, cmd, tmux, tmuxc, tmuxs, tmuxv, konsole
+     currently supported: kitty, alacritty|alac, konsole|kde, xfce4Terminal|xfce, urxvt, WindowsTerminal|wt, ConEmu|conemu, mintty, cmd, tmux, tmuxc, tmuxs, tmuxv
+     order can be controlled by variable `g:sh_programs`
   c: close terminal after execution
   b: focus on current buffer / window
   f: filter, like ":{range}!cmd"
   r: like ":[range]read !cmd"
-  n: dry run (echo options passed to job_start / jobstart)
+  n: dry run (echo options passed to job_start)
+  S: run command directly, skipping shell
+  g: open file or run command in background / gui context
+     implies -S / -w option; use ":!start" in win32, job_start in other systems
+     when using job_start, open / xdg-open is used when only one arg given.
 ```
 
 details:
@@ -36,14 +37,13 @@ details:
   level); visual mode
 
 - `-w`: execute shell command in new application window. To see which
-  application is supported, execute `:Sh -h` or see `w` flag above (the latter
-  may not be updated).
-
-- `<bang>`: try to reuse existing builtin tty window (implies -t option)
+  application is supported, execute `:Sh` or `:Sh -h` or see `w` flag above.
 
 - `-t`: support `-t=xxx` to specify cmd to prepare terminal buffer; since
   space is not allowd in opt, cmd like `:bel 7sp` should be wrapped with
   UserCommand.
+
+- `<bang>`: try to reuse existing builtin tty window (implies -t option)
 
 ```vim
 :Sh! [cmd]...

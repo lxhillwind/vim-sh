@@ -223,7 +223,9 @@ function! s:sh(cmd, opt) abort " {{{2
   endif
 
   let shell = exists('g:sh_path') ? g:sh_path : &shell
-  let shell_list = s:ShellSplitUnix(shell)
+  " if shell is already quoted (executable(shell) is much likely false),
+  " then split it to get executable path.
+  let shell_list = executable(shell) ? [shell] : s:ShellSplitUnix(shell)
 
   if !executable(shell_list->get(0)) && !opt.skip_shell
     call s:echoerr(printf('shell is not found! (`%s`)', shell)) | return
@@ -534,8 +536,7 @@ function! s:post_func(result, opt) abort
 
   if s:is_win32
     let tenc = !empty(&tenc) ? &tenc : s:tenc
-    let shell = exists('g:sh_path') ? g:sh_path : &shell
-    if match(shell, 'busybox') < 0
+    if match(exists('g:sh_path') ? g:sh_path : &shell, 'busybox') < 0
       " skip iconv if not using busybox;
       " busybox / mingit has encoding issue; but mingit is not easy to detect.
       let tenc = ''
@@ -877,6 +878,9 @@ if !exists('g:sh_path')
       break
     endif
   endfor
+  if !exists('g:sh_path') && executable('busybox')
+    let g:sh_path = 'busybox sh'
+  endif
 endif
 
 " win32 quote related {{{2

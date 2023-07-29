@@ -83,8 +83,6 @@ set variable `g:sh_path` to override default shell:
 available shell is set.
 - unix-like default shell: `&shell`
 
-*If g:sh_path contains `busybox`, then sh is appended, like `busybox sh`.*
-
 ### `g:sh_programs`
 
 set variable `g:sh_programs` to override default `-w` program detection order:

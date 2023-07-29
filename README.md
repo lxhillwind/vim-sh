@@ -1,5 +1,46 @@
 # vim-sh
 
+## Example
+
+- `-v`: selected text as stdin, instead of selected line (builtin `<Visual>:!`)
+
+```vim
+<Visual>:Sh -v cat
+```
+
+- `-w`: execute shell command in new application window.
+
+```vim
+" use default detected application
+:Sh -w ls -l
+
+" force using cmd.exe
+:Sh -w=cmd ls -l
+```
+
+- `-t`: execute shell command in embedded terminal. Support `-t=xxx` to
+  specify cmd to prepare terminal buffer; since space is not allowd in opt,
+cmd like `:bel 7sp` should be wrapped with UserCommand.
+
+```vim
+" run after :vsplit
+:Sh -t=vs pwd
+" use current buffer
+:Sh -t= pwd
+" use default layout (window height is like cmdwin)
+:Sh -t pwd
+```
+
+- `<bang>`: try to reuse existing builtin tty window (implies -t option);
+
+- `-b`: run command in background (move focus back to edit buffer).
+
+```vim
+:Sh! -b gcc % -o %:r && %:r
+" also try this (if in tmux session):
+:Sh -b,w=tmuxs gcc % -o %:r && %:r
+```
+
 ## Usage
 
 ```console
@@ -31,33 +72,7 @@ Supported flags:
      when using job_start, open / xdg-open is used when only one arg given.
 ```
 
-details:
-
-- `-v`: selected text as stdin (this is different from filter, which is line
-  level); visual mode
-
-- `-w`: execute shell command in new application window. To see which
-  application is supported, execute `:Sh` or `:Sh -h` or see `w` flag above.
-
-- `-t`: support `-t=xxx` to specify cmd to prepare terminal buffer; since
-  space is not allowd in opt, cmd like `:bel 7sp` should be wrapped with
-  UserCommand.
-
-- `<bang>`: try to reuse existing builtin tty window (implies -t option)
-
-```vim
-:Sh! [cmd]...
-```
-
-- mix these options: (order does not matter)
-
-```vim
-Sh -wv [cmd]...
-```
-
-NOTE: `:Sh -w -v [cmd]...` will not work!
-
-## Config
+## optional Config
 
 ### `g:sh_path`
 
@@ -91,10 +106,22 @@ If the function returns 0, then try the next element.
 
 ## Feature
 
+### support both Vim and Neovim
+
+(embedded terminal behavior may be different, because of neovim / vim's
+different terminal implementation)
+
+### not affected by &shell / &shellcmdflag related setting
+
+Especially if using Windows;
+
+like Vim's `:terminal ++shell` with unix shell syntax.
+
 ### always use shell
 
-- Content after command will be passed to shell. (this is like builtin
-  `:terminal` with `++shell` option)
+So things like `&&`, `||`, `if`, `*` work by default.
+
+(though shell can be skipped intentionally by `-S` flag)
 
 ### proper % expand
 
@@ -110,21 +137,3 @@ This means that command like `Sh printf %s %:t:e` will print file basename
 automatically).
 
 `Sh printf %s %:t:e:S` also works.
-
-### unix shell support in native Windows vim (`has('win32') == 1`)
-
-By default, this requires [busybox-w32](https://frippery.org/busybox/) binary
-in `$PATH`.
-
-You can also use other shell by setting variable `g:sh_path`. (take
-effect at runtime)
-
-```vim
-" msys2 shell default path (x64)
-let g:sh_path = 'C:/msys64/usr/bin/bash.exe'
-
-" 32-bit git for windows (x64 system)
-let g:sh_path = 'C:/Program Files (x86)/Git/usr/bin/bash'
-```
-
-- `:terminal ++shell` with unix shell syntax.

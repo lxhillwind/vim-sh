@@ -323,7 +323,7 @@ function! s:sh(cmd, opt) abort " {{{2
         endif
       endif
     endif
-    call job_start(cmd, #{stoponexit: '', in_io: 'null', out_io: 'null', err_io: 'null'})
+    call s:unix_start(cmd)
 
     return
   endif
@@ -443,7 +443,7 @@ function! s:sh(cmd, opt) abort " {{{2
   endif
   " }}}
 
-  " no tty {{{
+  " no tty && !nvim {{{
   let bufnr = bufadd('')
   call bufload(bufnr)
   let job_opt = extend(job_opt, {
@@ -515,7 +515,7 @@ function! s:unix_start(cmdlist, ...) abort
   if has('nvim')
     call jobstart(a:cmdlist, {'detach': 1})
   else
-    call job_start(a:cmdlist, {'stoponexit': ''})
+    call job_start(a:cmdlist, #{stoponexit: '', in_io: 'null', out_io: 'null', err_io: 'null'})
   endif
 endfunction
 

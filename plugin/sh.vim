@@ -223,6 +223,9 @@ function! s:sh(cmd, opt) abort " {{{2
     if opt.gui
       call s:echoerr('empty cmd (with -g option) is not allowed!') | return
     endif
+    if opt.skip_shell
+      call s:echoerr('empty cmd (with -S option) is not allowed!') | return
+    endif
   endif
 
   let shell = exists('g:sh_path') ? g:sh_path : s:sh_path_default

@@ -555,7 +555,7 @@ function! s:post_func(result, opt) abort
     let result = type(a:result) == type('') ? split(a:result, "\n") : a:result
 
     " fix encoding for non-utf-8
-    if s:is_win32 && !empty(tenc)
+    if s:is_win32 && !empty(tenc) && empty(opt.range)
           \ && opt.read_cmd
       " unable to get tenc in console version vim;
       " just use ":!{cmd}" / ":range!{cmd}" then.
@@ -574,7 +574,7 @@ function! s:post_func(result, opt) abort
     let result = type(a:result) == type([]) ? join(a:result, "\n") : a:result
 
     " fix encoding for non-utf-8
-    if s:is_win32 && !empty(tenc)
+    if s:is_win32 && !empty(tenc) && empty(opt.range)
       let result = iconv(result, tenc, &enc)
     endif
     redraws | echon trim(result, "\n")

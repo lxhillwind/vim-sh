@@ -96,6 +96,14 @@ function! s:sh(cmd, opt) abort " {{{2
   call add(help, '  v: visual mode (char level)')
   let opt.visual = match(opt_string, 'v') >= 0
 
+  call add(help, '  e: expand % unconditionally; use "\%" to get a literal "%" (rule is like in :!)')
+  let opt.expand_percent = match(opt_string, 'e') >= 0
+  call add(help, '  E: disable expanding %')
+  let opt.expand_percent_disable = match(opt_string, 'E') >= 0
+  if opt.expand_percent && opt.expand_percent_disable
+    throw '-e / -E cannot be specified at the same time!'
+  endif
+
   call add(help, '  t: use builtin terminal (support sub opt, like this: -t=7split)')
   call add(help, '     sub opt is used as action to prepare terminal buffer')
   let opt.tty = match(opt_string, 't') >= 0
@@ -207,11 +215,21 @@ function! s:sh(cmd, opt) abort " {{{2
   endif
 
   " expand %
-  let cmd = substitute(cmd, '\v%(^|\s)\zs(\%(\:[phtreS])*)\ze%($|\s)',
-        \ s:is_win32 ?
-        \'\=s:shellescape(s:tr_slash(expand(s:trim_S(submatch(1)))))' :
-        \'\=shellescape(expand(s:trim_S(submatch(1))))',
-        \ 'g')
+  if opt.expand_percent_disable
+    "
+  elseif opt.expand_percent
+    let cmd = substitute(cmd, '\v((\\\%)|(\%(\:[phtreS])*))',
+          \ s:is_win32 ?
+          \'\=submatch(1) == "\\%" ? "%" : s:tr_slash(expand(submatch(1)))' :
+          \'\=submatch(1) == "\\%" ? "%" : expand(submatch(1))',
+          \ 'g')
+  else
+    let cmd = substitute(cmd, '\v%(^|\s)\zs(\%(\:[phtreS])*)\ze%($|\s)',
+          \ s:is_win32 ?
+          \'\=s:shellescape(s:tr_slash(expand(s:trim_S(submatch(1)))))' :
+          \'\=shellescape(expand(s:trim_S(submatch(1))))',
+          \ 'g')
+  endif
 
   if empty(cmd)
     if stdin_flag isnot# 0

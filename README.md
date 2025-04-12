@@ -135,3 +135,7 @@ This means that command like `Sh printf %s %:t:e` will print file basename
 automatically).
 
 `Sh printf %s %:t:e:S` also works.
+
+- Pass `-e` flag to always expand `%`, like in `:!`; use `\%` to get a literal
+  `%`;
+- Pass `-E` flag to disable expanding completely.

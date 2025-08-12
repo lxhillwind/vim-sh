@@ -11,7 +11,7 @@ endif
 let g:loaded_sh = 1
 
 " "item" or "item|alias"
-let s:sh_programs_builtin = ['kitty', 'alacritty|alac', 'konsole|kde', 'xfce4Terminal|xfce', 'urxvt', 'ConEmu|conemu', 'mintty', 'cmd', 'tmux', 'tmuxc', 'tmuxs', 'tmuxv']
+let s:sh_programs_builtin = ['konsole|kde', 'xfce4Terminal|xfce', 'ConEmu|conemu', 'mintty', 'kitty', 'alacritty|alac', 'urxvt', 'wezterm|wez', 'ghostty', 'cmd', 'tmux', 'tmuxc', 'tmuxs', 'tmuxv']
 
 " main {{{1
 " common var def {{{2
@@ -709,6 +709,27 @@ function! s:ShellSplitUnix(s)
 endfunction
 
 " -w program {{{2
+function! s:program_ghostty(context) abort
+  let cmd = a:context.cmd
+  if executable('ghostty')
+    let joined_cmd = join(map(cmd, 'shellescape(v:val)'), ' ')
+    if has('mac')
+      call a:context.start_fn(['open', '-n', '-a', 'Ghostty', '--args', '--working-directory=' .. getcwd(), '-e', joined_cmd])
+    else
+      call a:context.start_fn(['ghostty', '-e', joined_cmd])
+    endif
+    return 1
+  endif
+endfunction
+
+function! s:program_wezterm(context) abort
+  let cmd = a:context.cmd
+  if executable('wezterm')
+    call a:context.start_fn(['wezterm', 'start', '--cwd', getcwd()] + cmd)
+    return 1
+  endif
+endfunction
+
 function! s:program_kitty(context) abort
   let cmd = a:context.cmd
   if executable('kitty')

@@ -714,7 +714,7 @@ function! s:program_ghostty(context) abort
   if executable('ghostty')
     let joined_cmd = join(map(cmd, 'shellescape(v:val)'), ' ')
     if has('mac')
-      call a:context.start_fn(['open', '-n', '-a', 'Ghostty', '--args', '--working-directory=' .. getcwd(), '-e', joined_cmd])
+      call a:context.start_fn(['open', '-n', '-a', 'Ghostty', '--args', '--working-directory=' .. getcwd(), '--initial-command=' .. joined_cmd])
     else
       call a:context.start_fn(['ghostty', '-e', joined_cmd])
     endif
@@ -733,11 +733,7 @@ endfunction
 function! s:program_kitty(context) abort
   let cmd = a:context.cmd
   if executable('kitty')
-    if a:context.interactive_shell
-      call a:context.start_fn(['kitty'] + cmd)
-    else
-      call a:context.start_fn(['kitty', '-T', a:context.term_name] + cmd)
-    endif
+    call a:context.start_fn(['kitty'] + cmd)
     return 1
   endif
 endfunction

@@ -11,7 +11,7 @@ endif
 let g:loaded_sh = 1
 
 " "item" or "item|alias"
-let s:sh_programs_builtin = ['konsole|kde', 'xfce4Terminal|xfce', 'ConEmu|conemu', 'mintty', 'kitty', 'alacritty|alac', 'urxvt', 'wezterm|wez', 'ghostty', 'cmd', 'tmux', 'tmuxc', 'tmuxs', 'tmuxv']
+let s:sh_programs_builtin = ['konsole|kde', 'xfce4Terminal|xfce', 'ConEmu|conemu', 'mintty', 'TerminalApp', 'kitty', 'alacritty|alac', 'urxvt', 'wezterm|wez', 'ghostty', 'cmd', 'tmux', 'tmuxc', 'tmuxs', 'tmuxv']
 
 " main {{{1
 " common var def {{{2
@@ -301,16 +301,19 @@ function! s:sh(cmd, opt) abort " {{{2
     if opt.skip_shell
       let cmd_new = s:ShellSplitUnix(cmd)
     else
+      let title_cmd = opt.window ?
+            \ 'printf "\x1b]0;%s\007" ' .. shellescape(l:term_name)
+            \ : ':'
       if !empty(tmpfile)
         if !s:is_win32
-          let cmd_new = shell_list + ['-c', printf('sh -c %s < %s',
-                \ shellescape(cmd), shellescape(tmpfile))]
+          let cmd_new = shell_list + ['-c', printf('%s; sh -c %s < %s',
+                \ title_cmd, shellescape(cmd), shellescape(tmpfile))]
         else
-          let cmd_new = shell_list + ['-c', printf('sh -c %s < %s',
-                \ s:shellescape(cmd), s:shellescape(s:tr_slash(s:wsl_path(shell, tmpfile))))]
+          let cmd_new = shell_list + ['-c', printf('%s; sh -c %s < %s',
+                \ title_cmd, s:shellescape(cmd), s:shellescape(s:tr_slash(s:wsl_path(shell, tmpfile))))]
         endif
       else
-        let cmd_new = shell_list + ['-c', cmd]
+        let cmd_new = shell_list + ['-c', printf('%s; %s', title_cmd, cmd)]
       endif
     endif
   endif
@@ -709,6 +712,25 @@ function! s:ShellSplitUnix(s)
 endfunction
 
 " -w program {{{2
+" test case:
+"   printf ' single: '\''\n double: "\n single again: '"'"'\n backslash: \\\n backslashes: \\\\\n'
+
+function! s:program_TerminalApp(context) abort
+  if has('mac')
+    let cmd = a:context.cmd
+    let joined_cmd = join(map(cmd, 'shellescape(v:val)'), ' ')
+    call a:context.start_fn(['osascript',
+          \ '-e', 'tell application "Terminal"',
+          \ '-e', 'do script "' ..
+            \ escape(printf('clear; cd %s && %s; exit', shellescape(getcwd()), joined_cmd), '"\')
+            \ .. '"',
+          \ '-e', 'activate',
+          \ '-e', 'end tell',
+          \ ])
+    return 1
+  endif
+endfunction
+
 function! s:program_ghostty(context) abort
   let cmd = a:context.cmd
   if executable('ghostty')
@@ -741,7 +763,7 @@ endfunction
 function! s:program_alacritty(context) abort
   let cmd = a:context.cmd
   if executable('alacritty')
-    call a:context.start_fn(['alacritty', '--working-directory', getcwd(), '-t', a:context.term_name, '-e'] + cmd)
+    call a:context.start_fn(['alacritty', '--working-directory', getcwd(), '-e'] + cmd)
     return 1
   endif
 endfunction
@@ -749,7 +771,7 @@ endfunction
 function! s:program_urxvt(context) abort
   let cmd = a:context.cmd
   if executable('urxvt')
-    call a:context.start_fn(['urxvt', '-title', a:context.term_name, '-e'] + cmd)
+    call a:context.start_fn(['urxvt', '-e'] + cmd)
     return 1
   endif
 endfunction
@@ -801,7 +823,7 @@ function! s:program_ConEmu(context) abort
     return 0
   endif
 
-  call a:context.start_fn([conemu, '-title', a:context.term_name, '-run'] + a:context.cmd)
+  call a:context.start_fn([conemu, '-run'] + a:context.cmd)
   return 1
 endfunction
 
@@ -814,7 +836,7 @@ function! s:program_mintty(context) abort
   endif
 
   if executable(mintty_path)
-    let cmd = [mintty_path, '-t', a:context.term_name] + cmd
+    let cmd = [mintty_path] + cmd
     call a:context.start_fn(cmd)
     return 1
   endif
@@ -823,7 +845,7 @@ endfunction
 function! s:program_konsole(context) abort
   let cmd = a:context.cmd
   if executable('konsole')
-    call a:context.start_fn(['konsole', '-p', 'tabtitle=' .. a:context.term_name, '-e'] + cmd)
+    call a:context.start_fn(['konsole', '-e'] + cmd)
     return 1
   endif
 endfunction
@@ -832,11 +854,7 @@ function! s:program_xfce4Terminal(context) abort
   let cmd = a:context.cmd
   if executable('xfce4-terminal')
     let joined_cmd = join(map(cmd, 'shellescape(v:val)'), ' ')
-    if a:context.interactive_shell
-      call a:context.start_fn(['xfce4-terminal', '-e', joined_cmd])
-    else
-      call a:context.start_fn(['xfce4-terminal', '-T', a:context.term_name, '-e', joined_cmd])
-    endif
+    call a:context.start_fn(['xfce4-terminal', '-e', joined_cmd])
     return 1
   endif
 endfunction

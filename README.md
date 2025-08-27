@@ -56,10 +56,12 @@ Supported flags:
   h: display this help
   !: (:Sh! ...); try to reuse terminal window (implies -t)
   v: visual mode (char level)
+  e: expand % unconditionally; use "\%" to get a literal "%" (rule is like in :!)
+  E: disable expanding %
   t: use builtin terminal (support sub opt, like this: -t=7split)
      sub opt is used as action to prepare terminal buffer
   w: use external terminal (support sub opt, like this: -w=urxvt,w=cmd)
-     currently supported: kitty, alacritty|alac, konsole|kde, xfce4Terminal|xfce, urxvt, WindowsTerminal|wt, ConEmu|conemu, mintty, cmd, tmux, tmuxc, tmuxs, tmuxv
+     currently supported: konsole|kde, xfce4Terminal|xfce, ConEmu|conemu, mintty, TerminalApp, kitty, alacritty|alac, urxvt, wezterm|wez, ghostty, cmd, tmux, tmuxc, tmuxs, tmuxv
      order can be controlled by variable `g:sh_programs`
   c: close terminal after execution
   b: focus on current buffer / window

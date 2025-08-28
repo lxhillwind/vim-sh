@@ -607,7 +607,7 @@ function! s:cmdlist_keep_window(shell_list, cmd) abort
   return a:shell_list + ['-c',
         \ '"$@"; if command -v stty >/dev/null; then stty sane; fi; '
         \ . 'echo; echo "Press any key to continue..."; '
-        \ . 'if command -v zstyle >/dev/null; then read -q; else read -n 1; fi',
+        \ . 'if command -v zstyle >/dev/null 2>&1; then read -q; else read -n 1; fi',
         \ ''] + a:cmd
 endfunction
 

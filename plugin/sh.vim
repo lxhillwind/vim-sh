@@ -11,7 +11,7 @@ endif
 let g:loaded_sh = 1
 
 " "item" or "item|alias"
-let s:sh_programs_builtin = ['konsole|kde', 'xfce4Terminal|xfce', 'ConEmu|conemu', 'mintty', 'TerminalApp', 'kitty', 'alacritty|alac', 'urxvt', 'wezterm|wez', 'ghostty', 'cmd', 'tmux', 'tmuxc', 'tmuxs', 'tmuxv']
+let s:sh_programs_builtin = ['konsole|kde', 'xfce4Terminal|xfce', 'gnomeTerminal|gnome', 'ConEmu|conemu', 'mintty', 'TerminalApp', 'kitty', 'alacritty|alac', 'urxvt', 'wezterm|wez', 'ghostty', 'cmd', 'tmux', 'tmuxc', 'tmuxs', 'tmuxv']
 
 " main {{{1
 " common var def {{{2
@@ -855,6 +855,14 @@ function! s:program_xfce4Terminal(context) abort
   if executable('xfce4-terminal')
     let joined_cmd = join(map(cmd, 'shellescape(v:val)'), ' ')
     call a:context.start_fn(['xfce4-terminal', '-e', joined_cmd])
+    return 1
+  endif
+endfunction
+
+function! s:program_gnomeTerminal(context) abort
+  let cmd = a:context.cmd
+  if executable('gnome-terminal')
+    call a:context.start_fn(['gnome-terminal', '--'] + cmd)
     return 1
   endif
 endfunction

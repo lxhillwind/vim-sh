@@ -11,7 +11,7 @@ endif
 let g:loaded_sh = 1
 
 " "item" or "item|alias"
-let s:sh_programs_builtin = ['konsole|kde', 'xfce4Terminal|xfce', 'gnomeTerminal|gnome', 'ConEmu|conemu', 'mintty', 'TerminalApp', 'kitty', 'alacritty|alac', 'urxvt', 'wezterm|wez', 'ghostty', 'cmd', 'tmux', 'tmuxc', 'tmuxs', 'tmuxv']
+let s:sh_programs_builtin = ['konsole|kde', 'xfce4Terminal|xfce', 'gnomeTerminal|gnome', 'mintty', 'ConEmu|conemu', 'TerminalApp', 'kitty', 'alacritty|alac', 'urxvt', 'wezterm|wez', 'ghostty', 'cmd', 'tmux', 'tmuxc', 'tmuxs', 'tmuxv']
 
 " main {{{1
 " common var def {{{2
@@ -828,11 +828,19 @@ function! s:program_ConEmu(context) abort
 endfunction
 
 function! s:program_mintty(context) abort
-  let [shell, cmd] = [a:context.shell, a:context.cmd]
-  " prefer mintty in the same dir of shell.
+  let cmd = a:context.cmd
+  if len(cmd) < 1
+    return 0
+  endif
+  " why not use a:context.shell?
+  "   because it may be quoted.
+  let shell = cmd[0]
+  " use mintty in the same dir of shell;
+  " why not just use "mintty" in %PATH%?
+  "   because other shell may not support mintty.
   let mintty_path = substitute(shell, '\v([\/]|^)\zs(zsh|bash)\ze(\.exe|"?$)', 'mintty', '')
-  if mintty_path ==# shell || !executable(mintty_path)
-    let mintty_path = 'mintty'
+  if mintty_path ==# shell
+    return 0
   endif
 
   if executable(mintty_path)

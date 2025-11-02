@@ -348,6 +348,9 @@ function! s:sh(cmd, opt) abort " {{{2
           " xdg-open does not support --; so let's check if cmd_0 is started
           " with -.
           let cmd = add(['xdg-open'], cmd_0)
+        elseif executable('explorer.exe')
+          " win32unix
+          let cmd = add(['explorer.exe'], cmd_0)
         else
           call s:echoerr("don't know how to open. (xdg-open is missing)")
           return

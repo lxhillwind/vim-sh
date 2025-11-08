@@ -141,3 +141,20 @@ automatically).
 - Pass `-e` flag to always expand `%`, like in `:!`; use `\%` to get a literal
   `%`;
 - Pass `-E` flag to disable expanding completely.
+
+## About supported terminal emulators (`-w` option)
+
+### ConEmu
+
+We use `-run` option to start programs.
+
+To avoid clicking on plus icon causing same program run a second time (<https://github.com/ConEmu/ConEmu/issues/1154>),
+you are better to set "Default task for new console" for an existing task.
+
+### Windows Terminal
+
+`wt` does not support `;` in command line argument.
+
+If you really want to use `wt`, one way is to set `wt` as default program for cmd.exe;
+the downside is that you can no longer use the default cmd.exe program
+(unless restoring the setting).

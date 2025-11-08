@@ -818,11 +818,24 @@ endfunction
 
 function! s:program_ConEmu(context) abort
   if !s:is_win32 | return 0 | endif
-  if executable('ConEmu64')
-    let conemu = 'ConEmu64'
-  elseif executable('ConEmu')
-    let conemu = 'ConEmu'
-  else
+  let conemu = ''
+  for i in [
+        \ 'C:\Program Files\ConEmu\',
+        \ '',
+        \ ]
+    if !empty(conemu)
+      break
+    endif
+    for j in ['ConEmu64', 'ConEmu']
+      if !empty(conemu)
+        break
+      endif
+      if executable(i .. j)
+        let conemu = i .. j
+      endif
+    endfor
+  endfor
+  if empty(conemu)
     return 0
   endif
 
